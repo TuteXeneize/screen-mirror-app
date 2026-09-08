@@ -1,0 +1,69 @@
+name: ScreenMirrorApp
+options:
+  bundleIdPrefix: com.matias.screenmirror
+
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    from: 125.0.0
+  SocketIO:
+    url: https://github.com/socketio/socket.io-client-swift
+    from: 16.1.0
+
+targets:
+  ScreenMirrorApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - ScreenMirrorApp
+    dependencies:
+      - target: ScreenMirrorExtension
+      - package: WebRTC
+    info:
+      path: ScreenMirrorApp/Info.plist
+    entitlements:
+      path: ScreenMirrorApp/ScreenMirrorApp.entitlements
+    scheme:
+      environmentVariables: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.matias.screenmirror.app
+        PRODUCT_NAME: ScreenMirrorApp
+        SWIFT_VERSION: "5.9"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_STYLE: "Manual"
+        DEVELOPMENT_TEAM: ""
+
+  ScreenMirrorExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - ScreenMirrorExtension
+    dependencies:
+      - package: WebRTC
+      - package: SocketIO
+    info:
+      path: ScreenMirrorExtension/Info.plist
+    entitlements:
+      path: ScreenMirrorExtension/ScreenMirrorExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.matias.screenmirror.extension
+        PRODUCT_NAME: ScreenMirrorExtension
+        SWIFT_VERSION: "5.9"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_STYLE: "Manual"
+        DEVELOPMENT_TEAM: ""
+
+schemes:
+  ScreenMirrorApp:
+    build:
+      targets:
+        ScreenMirrorApp: all
+        ScreenMirrorExtension: all

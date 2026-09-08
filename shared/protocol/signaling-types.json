@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SignalingMessages",
+  "description": "Especificacion de los mensajes WebSocket intercambiados para el emparejamiento y negociacion WebRTC",
+  "events": {
+    "crear-sala": {
+      "sender": "Receptor (Windows / Smart TV)",
+      "payload": "string (codigo de 6 digitos)"
+    },
+    "unirse-sala": {
+      "sender": "Emisor (iPhone)",
+      "payload": "string (codigo de 6 digitos)"
+    },
+    "iphone-conectado": {
+      "sender": "Servidor -> Receptor",
+      "payload": "void (iPhone listo para recibir oferta/stream)"
+    },
+    "sala-unida": {
+      "sender": "Servidor -> iPhone",
+      "payload": "string (codigo de sala confirmada)"
+    },
+    "error-sala": {
+      "sender": "Servidor -> Cliente",
+      "payload": "string (motivo del error)"
+    },
+    "mensaje-webrtc": {
+      "sender": "Bidireccional (iPhone <-> Receptor)",
+      "payload": {
+        "codigo": "string",
+        "tipo": "enum ('offer', 'answer', 'ice-candidate', 'reconnect-request')",
+        "payload": "object (RTCSessionDescriptionInit o RTCIceCandidateInit)"
+      }
+    },
+    "peer-desconectado": {
+      "sender": "Servidor -> Clientes",
+      "payload": "enum ('windows', 'iphone')"
+    }
+  }
+}

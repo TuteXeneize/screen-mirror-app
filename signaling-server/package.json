@@ -1,0 +1,24 @@
+{
+  "name": "screen-mirror-signaling",
+  "version": "1.0.0",
+  "description": "Servidor de señalizacion WebRTC y host local para Screen Mirroring iPhone a PC/TV",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": [
+    "webrtc",
+    "signaling",
+    "screen-mirror",
+    "ios",
+    "smart-tv"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

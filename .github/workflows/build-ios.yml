@@ -1,0 +1,102 @@
+name: Compilar App Nativa iOS (.IPA)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    name: Compilar IPA de ScreenMirrorApp
+    runs-on: macos-15
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Generar Proyecto con XcodeGen
+        run: |
+          cd ios
+          xcodegen generate
+          echo "=== Esquemas detectados ==="
+          xcodebuild -project ScreenMirrorApp.xcodeproj -list
+
+      - name: Compilar Binario con xcodebuild
+        run: |
+          cd ios
+          set -o pipefail
+          xcodebuild build \
+            -project ScreenMirrorApp.xcodeproj \
+            -scheme ScreenMirrorApp \
+            -sdk iphoneos \
+            -configuration Release \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_STYLE=Manual \
+            BUILD_DIR="$(pwd)/build" 2>&1 | tee build.log
+
+      - name: Extraer y Reportar Errores
+        if: failure()
+        run: |
+          cd ios
+          echo "### ❌ Primeros errores encontrados:" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          grep -C 3 -i "error:" build.log | head -n 40 >> $GITHUB_STEP_SUMMARY || tail -n 40 build.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Empaquetar archivo .IPA
+        if: success()
+        run: |
+          cd ios
+          APP_PATH=$(find build -name "ScreenMirrorApp.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "ScreenMirrorApp.app" -type d | head -n 1)
+          fi
+          
+          echo "App encontrada en: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No se encontró archivo ScreenMirrorApp.app"
+            exit 1
+          fi
+          
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r -q ScreenMirrorApp.ipa Payload
+          echo "IPA generado exitosamente!"
+
+      - name: Subir instalador IPA como Artefacto
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenMirrorApp-Instalador-iOS
+          path: ios/ScreenMirrorApp.ipa
+          retention-days: 30
+
+      - name: Publicar Release directa en GitHub (.IPA)
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "ScreenMirrorApp v1.0.0 (.IPA)"
+          body: |
+            ### 📺 ScreenMirrorApp v1.0.0 - Instalador iOS
+            - 🚀 Duplicación de pantalla en tiempo real (ReplayKit + WebRTC).
+            - 🖥️ Compatible con PC (Windows) y Smart TVs vía navegador web.
+            - 0 suscripciones, 0 tarjetas.
+            
+            Descargá el archivo `ScreenMirrorApp.ipa` para instalarlo en tu iPhone con Sideloadly o AltStore.
+          files: ios/ScreenMirrorApp.ipa
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
