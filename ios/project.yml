@@ -21,6 +21,13 @@ targets:
       - target: ScreenMirrorExtension
     info:
       path: ScreenMirrorApp/Info.plist
+      properties:
+        CFBundleDisplayName: "ScreenMirror"
+        CFBundleIdentifier: "com.matias.screenmirror"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        NSLocalNetworkUsageDescription: "Necesitamos acceso a tu red Wi-Fi local para conectar y transmitir la pantalla a tu PC o Smart TV en tiempo real."
+        NSCameraUsageDescription: "Necesitamos acceso a la cámara para escanear el código QR de emparejamiento."
     entitlements:
       path: ScreenMirrorApp/ScreenMirrorApp.entitlements
     settings:
@@ -28,6 +35,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.matias.screenmirror
         PRODUCT_NAME: ScreenMirrorApp
         SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: ScreenMirrorApp/Info.plist
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""
@@ -46,6 +55,16 @@ targets:
         product: SocketIO
     info:
       path: ScreenMirrorExtension/Info.plist
+      properties:
+        CFBundleDisplayName: "ScreenMirror Extension"
+        CFBundleIdentifier: "com.matias.screenmirror.extension"
+        CFBundlePackageType: "XPC!"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: "com.apple.broadcast-services-upload"
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SampleHandler"
+          RPBroadcastProcessMode: "RPBroadcastProcessModeSampleBuffers"
     entitlements:
       path: ScreenMirrorExtension/ScreenMirrorExtension.entitlements
     settings:
@@ -53,6 +72,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.matias.screenmirror.extension
         PRODUCT_NAME: ScreenMirrorExtension
         SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: ScreenMirrorExtension/Info.plist
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""

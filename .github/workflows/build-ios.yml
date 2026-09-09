@@ -77,6 +77,10 @@ jobs:
             exit 1
           fi
           
+          echo "=== Verificando Info.plist de la extension ==="
+          plutil -p "$APP_PATH/PlugIns/ScreenMirrorExtension.appex/Info.plist"
+          
+          rm -rf Payload ScreenMirrorApp.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -r -q ScreenMirrorApp.ipa Payload
@@ -94,11 +98,11 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "ScreenMirrorApp v1.0.0 (.IPA)"
+          tag_name: v1.0.1
+          name: "ScreenMirrorApp v1.0.1 (.IPA)"
           body: |
-            ### 📺 ScreenMirrorApp v1.0.0 - Instalador iOS
-            - 🚀 Duplicacion de pantalla en tiempo real (ReplayKit + WebRTC).
+            ### 📺 ScreenMirrorApp v1.0.1 - Instalador iOS
+            - 🚀 Soporte completo para Sideloadly / AltStore con diccionario NSExtension corregido.
             - 🖥️ Compatible con PC (Windows) y Smart TVs via navegador web.
             - 0 suscripciones, 0 tarjetas.
             
