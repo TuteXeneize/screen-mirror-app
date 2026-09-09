@@ -98,13 +98,14 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.2
-          name: "ScreenMirrorApp v1.0.2 (.IPA)"
+          tag_name: v1.0.3
+          name: "ScreenMirrorApp v1.0.3 (.IPA)"
           body: |
-            ### 📺 ScreenMirrorApp v1.0.2 - Instalador iOS
-            - 🚀 Conexión directa y automática por Wi-Fi a tu PC (192.168.1.38:3000).
-            - 🔓 Soporte de App Transport Security para conexiones HTTP locales en iOS.
-            - 🔄 Auto-emparejamiento sin necesidad de App Groups.
+            ### 📺 ScreenMirrorApp v1.0.3 - Instalador iOS
+            - 🚀 Sincronización WebRTC inmediata: Oferta SDP y candidatos ICE emitidos únicamente tras confirmar la sala.
+            - 🔄 Auto-descubrimiento de sala activa entre la extensión ReplayKit y la PC sin depender de App Groups de Apple.
+            - ⚡ Cola segura de candidatos ICE en el receptor web para evitar pérdidas durante el handshake.
+            - 🛡️ Compatibilidad total con cuentas gratuitas de Apple ID mediante Sideloadly.
             
             Descarga el archivo `ScreenMirrorApp.ipa` para instalarlo en tu iPhone con Sideloadly o AltStore.
           files: ios/ScreenMirrorApp.ipa

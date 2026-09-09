@@ -63,6 +63,8 @@ export function setupPeerConnection({
     };
   }
 
+  let candidateQueue = [];
+
   // Escuchar mensajes de señalización provenientes del iPhone
   const handleSignalingMessage = async (data) => {
     if (!data || !pc) return;
@@ -71,6 +73,16 @@ export function setupPeerConnection({
       if (data.tipo === 'offer') {
         console.log('[WebRTC] Oferta SDP recibida del iPhone');
         await pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+
+        while (candidateQueue.length > 0) {
+          const cand = candidateQueue.shift();
+          try {
+            await pc.addIceCandidate(cand);
+          } catch (e) {
+            console.warn('[WebRTC] Error agregando candidato en cola:', e);
+          }
+        }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -82,7 +94,12 @@ export function setupPeerConnection({
         });
         console.log('[WebRTC] Respuesta SDP (Answer) enviada al iPhone');
       } else if (data.tipo === 'ice-candidate' && data.payload) {
-        await pc.addIceCandidate(new RTCIceCandidate(data.payload));
+        const candidate = new RTCIceCandidate(data.payload);
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          await pc.addIceCandidate(candidate);
+        } else {
+          candidateQueue.push(candidate);
+        }
       }
     } catch (err) {
       console.error('[WebRTC] Error procesando mensaje de señalización:', err);

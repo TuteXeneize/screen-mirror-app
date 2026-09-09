@@ -91,14 +91,24 @@ app.get('/api/info', (req, res) => {
   });
 });
 
+// Estructura en memoria para salas de emparejamiento
+// Formato: { "123456": { windowsId: "socket_id", iphoneId: null, createdAt: timestamp } }
+const rooms = {};
+let lastPairedRoomCode = null;
+
 // Endpoint para que la extensión de iOS obtenga la sala activa automáticamente
 app.get('/api/active-room', (req, res) => {
-  const roomCodes = Object.keys(rooms);
-  if (roomCodes.length > 0) {
-    const latestCode = roomCodes[roomCodes.length - 1];
+  let activeCode = (lastPairedRoomCode && rooms[lastPairedRoomCode]) ? lastPairedRoomCode : null;
+  if (!activeCode) {
+    const roomCodes = Object.keys(rooms);
+    if (roomCodes.length > 0) {
+      activeCode = roomCodes[roomCodes.length - 1];
+    }
+  }
+  if (activeCode) {
     res.json({
       success: true,
-      roomCode: latestCode,
+      roomCode: activeCode,
       localIp: localIp,
       port: PORT
     });
@@ -110,9 +120,15 @@ app.get('/api/active-room', (req, res) => {
   }
 });
 
-// Estructura en memoria para salas de emparejamiento
-// Formato: { "123456": { windowsId: "socket_id", iphoneId: null, createdAt: timestamp } }
-const rooms = {};
+// Endpoint para vincular explícitamente el código desde la app principal
+app.post('/api/pair', (req, res) => {
+  const { roomCode } = req.body || {};
+  if (roomCode) {
+    lastPairedRoomCode = String(roomCode).trim();
+  }
+  console.log(`[🔗] iPhone vinculó el código: ${roomCode}`);
+  res.json({ success: true, roomCode });
+});
 
 io.on('connection', (socket) => {
   const clientIp = socket.handshake.address;
@@ -137,11 +153,6 @@ io.on('connection', (socket) => {
   socket.on('unirse-sala', (codigoSala) => {
     const sala = rooms[codigoSala];
     if (sala && sala.windowsId) {
-      if (sala.iphoneId && sala.iphoneId !== socket.id) {
-        socket.emit('error-sala', 'La sala ya está ocupada por otro dispositivo.');
-        return;
-      }
-      
       sala.iphoneId = socket.id;
       socket.join(codigoSala);
       console.log(`[📱] iPhone ${socket.id} se unió a la sala: ${codigoSala}`);
@@ -158,9 +169,14 @@ io.on('connection', (socket) => {
 
   // 2b. iPhone solicita unirse automáticamente a la sala activa de la PC
   socket.on('unirse-sala-automatica', () => {
-    const roomCodes = Object.keys(rooms);
-    if (roomCodes.length > 0) {
-      const codigoSala = roomCodes[roomCodes.length - 1];
+    let codigoSala = (lastPairedRoomCode && rooms[lastPairedRoomCode]) ? lastPairedRoomCode : null;
+    if (!codigoSala) {
+      const roomCodes = Object.keys(rooms);
+      if (roomCodes.length > 0) {
+        codigoSala = roomCodes[roomCodes.length - 1];
+      }
+    }
+    if (codigoSala && rooms[codigoSala]) {
       const sala = rooms[codigoSala];
       sala.iphoneId = socket.id;
       socket.join(codigoSala);
@@ -174,12 +190,24 @@ io.on('connection', (socket) => {
 
   // 3. Puente de señalización WebRTC (SDP offer, SDP answer, ICE candidates, reconnect)
   socket.on('mensaje-webrtc', (data) => {
-    if (!data || !data.codigo || !data.tipo) return;
-    const { codigo, tipo, payload } = data;
+    if (!data || !data.tipo) return;
+    let codigo = data.codigo;
     
-    if (rooms[codigo]) {
-      // Reenviar al otro participante de la misma sala
-      socket.to(codigo).emit('mensaje-webrtc', { tipo, payload });
+    // Si no vino código o vino vacío, buscar la sala de este socket
+    if (!codigo || !rooms[codigo]) {
+      for (const [cod, s] of Object.entries(rooms)) {
+        if (s.iphoneId === socket.id || s.windowsId === socket.id) {
+          codigo = cod;
+          break;
+        }
+      }
+    }
+    
+    if (codigo && rooms[codigo]) {
+      console.log(`[💬] Reenviando ${data.tipo} en sala ${codigo}`);
+      socket.to(codigo).emit('mensaje-webrtc', { tipo: data.tipo, payload: data.payload });
+    } else {
+      console.warn(`[⚠️] Mensaje WebRTC (${data.tipo}) recibido pero no se encontró la sala.`);
     }
   });
 

@@ -55,14 +55,16 @@ class SignalingSocketClient {
                 print("[Signaling] Conectado. Uniéndose automáticamente a la sala activa de la PC...")
                 socket.emit("unirse-sala-automatica")
             }
-            self.delegate?.signalingSocketDidConnect(self)
         }
 
         socket.on("sala-unida") { [weak self] data, ack in
+            guard let self = self else { return }
             if let confirmedCode = data.first as? String {
-                self?.roomCode = confirmedCode
+                self.roomCode = confirmedCode
                 print("[Signaling] Sala confirmada: \(confirmedCode)")
             }
+            // Iniciar WebRTC ÚNICAMENTE cuando la sala ya está confirmada y unida
+            self.delegate?.signalingSocketDidConnect(self)
         }
 
         socket.on("error-sala") { [weak self] data, ack in
@@ -83,8 +85,10 @@ class SignalingSocketClient {
             } else if tipo == "ice-candidate", let payload = data["payload"] as? [String: Any] {
                 let candidateSdp = payload["candidate"] as? String ?? ""
                 let sdpMid = payload["sdpMid"] as? String
-                let sdpMLineIndex = (payload["sdpMLineIndex"] as? Int32) ?? 0
-                self.delegate?.signalingSocket(self, didReceiveCandidate: candidateSdp, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
+                let sdpMLineIndex = (payload["sdpMLineIndex"] as? NSNumber)?.int32Value ?? (payload["sdpMLineIndex"] as? Int32) ?? 0
+                if !candidateSdp.isEmpty {
+                    self.delegate?.signalingSocket(self, didReceiveCandidate: candidateSdp, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
+                }
             } else if tipo == "reconnect-request" {
                 print("[Signaling] El receptor solicitó reconexión.")
                 self.delegate?.signalingSocketDidRequestReconnect(self)

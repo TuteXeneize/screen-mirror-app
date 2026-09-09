@@ -163,13 +163,17 @@ struct ContentView: View {
         isConfigured = true
         statusMessage = "Comprobando conexión con tu PC..."
 
-        // Test de red directo con la PC
-        guard let url = URL(string: "\(cleanUrl)/api/info") else {
+        // Test de red y vinculación directa con la PC
+        guard let url = URL(string: "\(cleanUrl)/api/pair") else {
             statusMessage = "⚠️ URL inválida: \(cleanUrl)"
             return
         }
 
         var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let jsonBody = ["roomCode": cleanCode]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: jsonBody)
         request.timeoutInterval = 4.0
 
         URLSession.shared.dataTask(with: request) { data, response, error in

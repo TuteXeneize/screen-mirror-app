@@ -17,24 +17,56 @@ class SampleHandler: RPBroadcastSampleHandler {
 
     // 1. Invocado cuando el usuario inicia la duplicación de pantalla
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        // Leer los datos si el App Group está disponible
+        print("▶️ [Extension] Transmisión iniciada por el usuario.")
+
         let defaults = UserDefaults(suiteName: appGroupSuite)
         let codigoGuardado = defaults?.string(forKey: "codigoSalaCompartido") ?? ""
         let serverGuardado = defaults?.string(forKey: "serverUrl") ?? "http://192.168.1.38:3000"
         let calidadGuardada = defaults?.integer(forKey: "qualityProfile") ?? 1
 
-        self.roomCode = codigoGuardado
         self.serverUrl = serverGuardado.isEmpty ? "http://192.168.1.38:3000" : serverGuardado
         self.qualityProfile = calidadGuardada
+        self.roomCode = codigoGuardado
 
-        print("[Extension] Conectando a \(serverUrl) (Sala: \(roomCode.isEmpty ? "Automática" : roomCode))...")
-
-        // Inicializar motor WebRTC
         self.webRTCManager = WebRTCManager()
         self.webRTCManager?.delegate = self
 
-        // Inicializar cliente de señalización WebSocket
-        self.socketClient = SignalingSocketClient(serverUrl: serverUrl, roomCode: roomCode)
+        if !self.roomCode.isEmpty {
+            self.conectarSocket(codigo: self.roomCode)
+        } else {
+            // Consultar a la PC la sala activa para auto-emparejar
+            self.consultarSalaActivaYConectar()
+        }
+    }
+
+    private func consultarSalaActivaYConectar() {
+        guard let url = URL(string: "\(self.serverUrl)/api/active-room") else {
+            self.conectarSocket(codigo: "")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2.5
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            var codigoDetectado = ""
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let code = json["roomCode"] as? String {
+                codigoDetectado = code
+                print("[Extension] Sala activa detectada desde la PC: \(code)")
+            }
+            DispatchQueue.main.async {
+                self.conectarSocket(codigo: codigoDetectado)
+            }
+        }.resume()
+    }
+
+    private func conectarSocket(codigo: String) {
+        self.roomCode = codigo
+        print("[Extension] Conectando a \(self.serverUrl) con sala: \(self.roomCode)")
+        self.socketClient = SignalingSocketClient(serverUrl: self.serverUrl, roomCode: self.roomCode)
         self.socketClient?.delegate = self
         self.socketClient?.connect()
     }
@@ -107,7 +139,8 @@ extension SampleHandler: WebRTCManagerDelegate {
 // MARK: - SignalingSocketDelegate
 extension SampleHandler: SignalingSocketDelegate {
     func signalingSocketDidConnect(_ client: SignalingSocketClient) {
-        print("[Extension] Socket conectado a sala \(roomCode). Iniciando WebRTC PeerConnection...")
+        self.roomCode = client.roomCode
+        print("[Extension] Socket conectado a sala \(self.roomCode). Iniciando WebRTC PeerConnection...")
         webRTCManager?.startPeerConnection(qualityProfile: qualityProfile)
         webRTCManager?.createAndSendOffer()
     }
