@@ -55,7 +55,7 @@ class WebRTCManager: NSObject {
 
         // Agregar pista de video
         let videoTrack = connectionFactory.videoTrack(with: self.videoSource, trackId: "screen0")
-        self.peerConnection?.add(videoTrack, streamIds: ["screen_stream"])
+        _ = self.peerConnection?.add(videoTrack, streamIds: ["screen_stream"])
 
         // Aplicar configuraciones de codificación y prioridad de fluidez (maintainFramerate)
         applyQualityAndDegradation(qualityProfile: qualityProfile)
@@ -68,22 +68,22 @@ class WebRTCManager: NSObject {
 
         let parameters = sender.parameters
         // CLAVE DE FLUIDEZ: Priorizar framerate sobre resolución ante caídas de red
-        parameters.degradationPreference = .maintainFramerate
+        parameters.degradationPreference = NSNumber(value: RTCDegradationPreference.maintainFramerate.rawValue)
 
         for encoding in parameters.encodings {
             switch qualityProfile {
             case 0: // Perfil Bajo (Ahorro de batería / red inestable)
-                encoding.maxBitrateBps = 1_500_000 // 1.5 Mbps
-                encoding.maxFramerate = 30
-                encoding.scaleResolutionDownBy = 2.0
+                encoding.maxBitrateBps = NSNumber(value: 1_500_000) // 1.5 Mbps
+                encoding.maxFramerate = NSNumber(value: 30)
+                encoding.scaleResolutionDownBy = NSNumber(value: 2.0)
             case 2: // Perfil Alto (Máxima fidelidad a 60 FPS)
-                encoding.maxBitrateBps = 6_000_000 // 6.0 Mbps
-                encoding.maxFramerate = 60
-                encoding.scaleResolutionDownBy = 1.0
+                encoding.maxBitrateBps = NSNumber(value: 6_000_000) // 6.0 Mbps
+                encoding.maxFramerate = NSNumber(value: 60)
+                encoding.scaleResolutionDownBy = NSNumber(value: 1.0)
             default: // Perfil Medio (Equilibrio perfecto calidad/latencia)
-                encoding.maxBitrateBps = 3_000_000 // 3.0 Mbps
-                encoding.maxFramerate = 60
-                encoding.scaleResolutionDownBy = 1.0
+                encoding.maxBitrateBps = NSNumber(value: 3_000_000) // 3.0 Mbps
+                encoding.maxFramerate = NSNumber(value: 60)
+                encoding.scaleResolutionDownBy = NSNumber(value: 1.0)
             }
         }
 

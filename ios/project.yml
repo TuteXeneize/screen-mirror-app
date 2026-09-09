@@ -4,10 +4,10 @@ options:
 
 packages:
   WebRTC:
-    url: https://github.com/stasel/WebRTC
-    from: 125.0.0
+    url: https://github.com/stasel/WebRTC.git
+    branch: latest
   SocketIO:
-    url: https://github.com/socketio/socket.io-client-swift
+    url: https://github.com/socketio/socket.io-client-swift.git
     from: 16.1.0
 
 targets:
@@ -19,16 +19,13 @@ targets:
       - ScreenMirrorApp
     dependencies:
       - target: ScreenMirrorExtension
-      - package: WebRTC
     info:
       path: ScreenMirrorApp/Info.plist
     entitlements:
       path: ScreenMirrorApp/ScreenMirrorApp.entitlements
-    scheme:
-      environmentVariables: {}
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.matias.screenmirror.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.matias.screenmirror
         PRODUCT_NAME: ScreenMirrorApp
         SWIFT_VERSION: "5.9"
         CODE_SIGNING_ALLOWED: "NO"
@@ -46,6 +43,7 @@ targets:
     dependencies:
       - package: WebRTC
       - package: SocketIO
+        product: SocketIO
     info:
       path: ScreenMirrorExtension/Info.plist
     entitlements:
