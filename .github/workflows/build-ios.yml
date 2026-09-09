@@ -98,13 +98,13 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
-          name: "ScreenMirrorApp v1.0.1 (.IPA)"
+          tag_name: v1.0.2
+          name: "ScreenMirrorApp v1.0.2 (.IPA)"
           body: |
-            ### 📺 ScreenMirrorApp v1.0.1 - Instalador iOS
-            - 🚀 Soporte completo para Sideloadly / AltStore con diccionario NSExtension corregido.
-            - 🖥️ Compatible con PC (Windows) y Smart TVs via navegador web.
-            - 0 suscripciones, 0 tarjetas.
+            ### 📺 ScreenMirrorApp v1.0.2 - Instalador iOS
+            - 🚀 Conexión directa y automática por Wi-Fi a tu PC (192.168.1.38:3000).
+            - 🔓 Soporte de App Transport Security para conexiones HTTP locales en iOS.
+            - 🔄 Auto-emparejamiento sin necesidad de App Groups.
             
             Descarga el archivo `ScreenMirrorApp.ipa` para instalarlo en tu iPhone con Sideloadly o AltStore.
           files: ios/ScreenMirrorApp.ipa

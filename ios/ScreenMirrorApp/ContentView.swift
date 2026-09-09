@@ -5,7 +5,7 @@ struct ContentView: View {
     // Identificador del App Group compartido con la Broadcast Extension
     private let appGroupSuite = "group.com.matias.screenmirror"
     
-    @State private var serverUrl: String = "http://192.168.1.100:3000"
+    @State private var serverUrl: String = "http://192.168.1.38:3000"
     @State private var roomCode: String = ""
     @State private var statusMessage: String = "Ingresa el código que ves en la pantalla de tu TV o PC"
     @State private var isConfigured: Bool = false
@@ -148,29 +148,50 @@ struct ContentView: View {
     }
 
     private func saveConfiguration() {
-        guard let defaults = UserDefaults(suiteName: appGroupSuite) else {
-            statusMessage = "Error accediendo al App Group."
+        let cleanUrl = serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanCode = roomCode.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let defaults = UserDefaults(suiteName: appGroupSuite) {
+            defaults.set(cleanUrl, forKey: "serverUrl")
+            defaults.set(cleanCode, forKey: "codigoSalaCompartido")
+            defaults.set(selectedQuality, forKey: "qualityProfile")
+            defaults.synchronize()
+        }
+        UserDefaults.standard.set(cleanUrl, forKey: "serverUrl")
+        UserDefaults.standard.set(cleanCode, forKey: "codigoSalaCompartido")
+
+        isConfigured = true
+        statusMessage = "Comprobando conexión con tu PC..."
+
+        // Test de red directo con la PC
+        guard let url = URL(string: "\(cleanUrl)/api/info") else {
+            statusMessage = "⚠️ URL inválida: \(cleanUrl)"
             return
         }
 
-        defaults.set(serverUrl.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "serverUrl")
-        defaults.set(roomCode.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "codigoSalaCompartido")
-        defaults.set(selectedQuality, forKey: "qualityProfile")
-        defaults.synchronize()
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 4.0
 
-        isConfigured = true
-        statusMessage = "✅ Vinculado con sala \(roomCode). ¡Ya puedes iniciar la transmisión!"
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    self.statusMessage = "✅ ¡Conexión con tu PC exitosa! Pulsa Iniciar Transmisión abajo."
+                } else {
+                    self.statusMessage = "⚠️ Guardado, pero tu iPhone no llega a la PC. ¿Están en el mismo Wi-Fi?"
+                }
+            }
+        }.resume()
     }
 
     private func loadConfiguration() {
-        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return }
-        if let savedServer = defaults.string(forKey: "serverUrl") {
+        let defaults = UserDefaults(suiteName: appGroupSuite) ?? UserDefaults.standard
+        if let savedServer = defaults.string(forKey: "serverUrl"), !savedServer.isEmpty {
             serverUrl = savedServer
         }
-        if let savedCode = defaults.string(forKey: "codigoSalaCompartido") {
+        if let savedCode = defaults.string(forKey: "codigoSalaCompartido"), !savedCode.isEmpty {
             roomCode = savedCode
             isConfigured = true
-            statusMessage = "✅ Sala \(savedCode) cargada previamente."
+            statusMessage = "✅ Sala \(savedCode) lista."
         }
         selectedQuality = defaults.integer(forKey: "qualityProfile")
     }

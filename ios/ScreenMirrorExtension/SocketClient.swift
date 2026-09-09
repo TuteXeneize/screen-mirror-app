@@ -15,7 +15,7 @@ class SignalingSocketClient {
 
     private var manager: SocketManager?
     private var socket: SocketIOClient?
-    private let roomCode: String
+    var roomCode: String
     private let serverUrl: String
 
     init(serverUrl: String, roomCode: String) {
@@ -48,13 +48,21 @@ class SignalingSocketClient {
 
         socket.on(clientEvent: .connect) { [weak self] data, ack in
             guard let self = self else { return }
-            print("[Signaling] Conectado al servidor de señalización. Uniéndose a sala: \(self.roomCode)")
-            socket.emit("unirse-sala", self.roomCode)
+            if !self.roomCode.isEmpty {
+                print("[Signaling] Conectado. Uniéndose a sala: \(self.roomCode)")
+                socket.emit("unirse-sala", self.roomCode)
+            } else {
+                print("[Signaling] Conectado. Uniéndose automáticamente a la sala activa de la PC...")
+                socket.emit("unirse-sala-automatica")
+            }
             self.delegate?.signalingSocketDidConnect(self)
         }
 
-        socket.on("sala-unida") { data, ack in
-            print("[Signaling] Confirmación recibida: sala unida exitosamente.")
+        socket.on("sala-unida") { [weak self] data, ack in
+            if let confirmedCode = data.first as? String {
+                self?.roomCode = confirmedCode
+                print("[Signaling] Sala confirmada: \(confirmedCode)")
+            }
         }
 
         socket.on("error-sala") { [weak self] data, ack in

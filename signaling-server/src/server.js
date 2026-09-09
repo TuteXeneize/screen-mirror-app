@@ -91,6 +91,25 @@ app.get('/api/info', (req, res) => {
   });
 });
 
+// Endpoint para que la extensión de iOS obtenga la sala activa automáticamente
+app.get('/api/active-room', (req, res) => {
+  const roomCodes = Object.keys(rooms);
+  if (roomCodes.length > 0) {
+    const latestCode = roomCodes[roomCodes.length - 1];
+    res.json({
+      success: true,
+      roomCode: latestCode,
+      localIp: localIp,
+      port: PORT
+    });
+  } else {
+    res.json({
+      success: false,
+      message: 'No hay salas abiertas en la PC. Abre el navegador en la PC primero.'
+    });
+  }
+});
+
 // Estructura en memoria para salas de emparejamiento
 // Formato: { "123456": { windowsId: "socket_id", iphoneId: null, createdAt: timestamp } }
 const rooms = {};
@@ -134,6 +153,22 @@ io.on('connection', (socket) => {
       socket.emit('sala-unida', codigoSala);
     } else {
       socket.emit('error-sala', 'Código de sala inválido o expirado.');
+    }
+  });
+
+  // 2b. iPhone solicita unirse automáticamente a la sala activa de la PC
+  socket.on('unirse-sala-automatica', () => {
+    const roomCodes = Object.keys(rooms);
+    if (roomCodes.length > 0) {
+      const codigoSala = roomCodes[roomCodes.length - 1];
+      const sala = rooms[codigoSala];
+      sala.iphoneId = socket.id;
+      socket.join(codigoSala);
+      console.log(`[📱] iPhone ${socket.id} se unió automáticamente a la sala: ${codigoSala}`);
+      io.to(sala.windowsId).emit('iphone-conectado');
+      socket.emit('sala-unida', codigoSala);
+    } else {
+      socket.emit('error-sala', 'No hay salas abiertas en la PC. Abre el navegador primero.');
     }
   });
 

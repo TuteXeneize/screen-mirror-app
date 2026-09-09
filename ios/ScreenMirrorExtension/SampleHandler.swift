@@ -17,26 +17,17 @@ class SampleHandler: RPBroadcastSampleHandler {
 
     // 1. Invocado cuando el usuario inicia la duplicación de pantalla
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        print("▶️ [Extension] Transmisión iniciada por el usuario.")
+        // Leer los datos si el App Group está disponible
+        let defaults = UserDefaults(suiteName: appGroupSuite)
+        let codigoGuardado = defaults?.string(forKey: "codigoSalaCompartido") ?? ""
+        let serverGuardado = defaults?.string(forKey: "serverUrl") ?? "http://192.168.1.38:3000"
+        let calidadGuardada = defaults?.integer(forKey: "qualityProfile") ?? 1
 
-        // Leer los datos de configuración guardados por la App Principal vía App Group
-        guard let defaults = UserDefaults(suiteName: appGroupSuite),
-              let codigo = defaults.string(forKey: "codigoSalaCompartido"),
-              !codigo.isEmpty else {
-            let error = NSError(
-                domain: "ScreenMirror",
-                code: 1001,
-                userInfo: [NSLocalizedFailureReasonErrorKey: "No se encontró el código de sala. Abre la app principal y guárdalo primero."]
-            )
-            finishBroadcastWithError(error)
-            return
-        }
+        self.roomCode = codigoGuardado
+        self.serverUrl = serverGuardado.isEmpty ? "http://192.168.1.38:3000" : serverGuardado
+        self.qualityProfile = calidadGuardada
 
-        self.roomCode = codigo
-        self.serverUrl = defaults.string(forKey: "serverUrl") ?? "http://192.168.1.100:3000"
-        self.qualityProfile = defaults.integer(forKey: "qualityProfile")
-
-        print("[Extension] Conectando a sala \(roomCode) en \(serverUrl)...")
+        print("[Extension] Conectando a \(serverUrl) (Sala: \(roomCode.isEmpty ? "Automática" : roomCode))...")
 
         // Inicializar motor WebRTC
         self.webRTCManager = WebRTCManager()

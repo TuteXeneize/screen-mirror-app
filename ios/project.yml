@@ -26,6 +26,9 @@ targets:
         CFBundleIdentifier: "com.matias.screenmirror"
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: "Necesitamos acceso a tu red Wi-Fi local para conectar y transmitir la pantalla a tu PC o Smart TV en tiempo real."
         NSCameraUsageDescription: "Necesitamos acceso a la cámara para escanear el código QR de emparejamiento."
     entitlements:
@@ -61,6 +64,10 @@ targets:
         CFBundlePackageType: "XPC!"
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: "Necesitamos acceso a tu red Wi-Fi local para conectar y transmitir la pantalla a tu PC o Smart TV en tiempo real."
         NSExtension:
           NSExtensionPointIdentifier: "com.apple.broadcast-services-upload"
           NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SampleHandler"
