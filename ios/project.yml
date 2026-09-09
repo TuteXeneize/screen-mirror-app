@@ -19,6 +19,7 @@ targets:
       - ScreenMirrorApp
     dependencies:
       - target: ScreenMirrorExtension
+      - package: WebRTC
     info:
       path: ScreenMirrorApp/Info.plist
       properties:
@@ -40,6 +41,7 @@ targets:
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: ScreenMirrorApp/Info.plist
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""
@@ -81,6 +83,7 @@ targets:
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: ScreenMirrorExtension/Info.plist
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""

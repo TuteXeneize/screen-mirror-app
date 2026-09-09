@@ -111,7 +111,7 @@ struct ContentView: View {
                             .padding(.horizontal)
 
                         // Selector nativo de ReplayKit
-                        BroadcastPickerView(extensionBundleId: "com.matias.screenmirror.extension")
+                        BroadcastPickerView(extensionBundleId: "\(Bundle.main.bundleIdentifier ?? "com.matias.screenmirror").extension")
                             .frame(width: 60, height: 60)
                             .background(Color.red.opacity(0.1))
                             .clipShape(Circle())

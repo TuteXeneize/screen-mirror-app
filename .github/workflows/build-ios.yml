@@ -77,6 +77,26 @@ jobs:
             exit 1
           fi
           
+          echo "=== Asegurando que WebRTC.framework este en Frameworks de la App ==="
+          mkdir -p "$APP_PATH/Frameworks"
+          if [ ! -d "$APP_PATH/Frameworks/WebRTC.framework" ]; then
+            echo "WebRTC.framework no esta en $APP_PATH/Frameworks. Buscando..."
+            WEBRTC_SOURCE=$(find build ~/Library/Developer/Xcode/DerivedData -name "WebRTC.framework" -type d 2>/dev/null | grep -v "simulator" | head -n 1)
+            if [ -n "$WEBRTC_SOURCE" ]; then
+              echo "Copiando WebRTC.framework desde: $WEBRTC_SOURCE"
+              cp -R "$WEBRTC_SOURCE" "$APP_PATH/Frameworks/"
+            else
+              echo "Descargando XCFramework de WebRTC..."
+              curl -sL "https://github.com/stasel/WebRTC/releases/download/152.0.0/WebRTC-M152.xcframework.zip" -o webrtc.zip
+              unzip -q webrtc.zip
+              cp -R WebRTC.xcframework/ios-arm64/WebRTC.framework "$APP_PATH/Frameworks/"
+              rm -rf webrtc.zip WebRTC.xcframework
+            fi
+          fi
+          
+          echo "=== Contenido de Frameworks ==="
+          ls -la "$APP_PATH/Frameworks"
+          
           echo "=== Verificando Info.plist de la extension ==="
           plutil -p "$APP_PATH/PlugIns/ScreenMirrorExtension.appex/Info.plist"
           
@@ -85,6 +105,7 @@ jobs:
           cp -R "$APP_PATH" Payload/
           zip -r -q ScreenMirrorApp.ipa Payload
           echo "IPA generado exitosamente!"
+          ls -lh ScreenMirrorApp.ipa
 
       - name: Subir instalador IPA como Artefacto
         if: success()
@@ -98,14 +119,13 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.3
-          name: "ScreenMirrorApp v1.0.3 (.IPA)"
+          tag_name: v1.0.4
+          name: "ScreenMirrorApp v1.0.4 (.IPA)"
           body: |
-            ### 📺 ScreenMirrorApp v1.0.3 - Instalador iOS
-            - 🚀 Sincronización WebRTC inmediata: Oferta SDP y candidatos ICE emitidos únicamente tras confirmar la sala.
-            - 🔄 Auto-descubrimiento de sala activa entre la extensión ReplayKit y la PC sin depender de App Groups de Apple.
-            - ⚡ Cola segura de candidatos ICE en el receptor web para evitar pérdidas durante el handshake.
-            - 🛡️ Compatibilidad total con cuentas gratuitas de Apple ID mediante Sideloadly.
+            ### 📺 ScreenMirrorApp v1.0.4 - Instalador iOS
+            - 🎯 Incrustación obligatoria de WebRTC.framework en el paquete IPA (soluciona cierre inmediato / nunca graba al tocar Start Broadcast).
+            - ⚡ Selector nativo dinámico de ReplayKit para preseleccionar directamente ScreenMirror.
+            - 🚀 Sincronización WebRTC inmediata y auto-descubrimiento HTTP de sala activa para cuentas gratuitas de Apple ID.
             
             Descarga el archivo `ScreenMirrorApp.ipa` para instalarlo en tu iPhone con Sideloadly o AltStore.
           files: ios/ScreenMirrorApp.ipa
