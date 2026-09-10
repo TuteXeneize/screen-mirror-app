@@ -7,94 +7,71 @@ protocol WebRTCManagerDelegate: AnyObject {
     func webRTCManager(_ manager: WebRTCManager, didChangeIceConnectionState state: RTCIceConnectionState)
 }
 
+/// Motor WebRTC: solo H.264 por hardware, resolución reducida, sin audio.
 class WebRTCManager: NSObject {
     weak var delegate: WebRTCManagerDelegate?
 
-    private var connectionFactory: RTCPeerConnectionFactory!
-    private var peerConnection: RTCPeerConnection?
-    private var videoSource: RTCVideoSource!
-    private(set) var capturer: ReplayKitCapturer!
-
-    override init() {
-        super.init()
-        setupPeerConnectionFactory()
-    }
-
-    private func setupPeerConnectionFactory() {
-        // Inicializar factoria con codificador nativo por hardware de Apple (VideoToolbox H.264)
+    // Factory compartida (costosa de crear — creada una sola vez)
+    private static let sharedFactory: RTCPeerConnectionFactory = {
+        // Inicializar globalmente WebRTC — necesario exactamente una vez por proceso
+        RTCInitializeSSL()
         let encoderFactory = RTCDefaultVideoEncoderFactory()
         let decoderFactory = RTCDefaultVideoDecoderFactory()
-        
-        self.connectionFactory = RTCPeerConnectionFactory(
+        return RTCPeerConnectionFactory(
             encoderFactory: encoderFactory,
             decoderFactory: decoderFactory
         )
+    }()
 
-        // Crear origen de video y vincular el capturador ReplayKit
-        self.videoSource = connectionFactory.videoSource()
-        self.capturer = ReplayKitCapturer(delegate: videoSource)
+    private var peerConnection: RTCPeerConnection?
+    let videoSource: RTCVideoSource
+    let capturer: ReplayKitCapturer
+
+    override init() {
+        let factory = WebRTCManager.sharedFactory
+        videoSource = factory.videoSource(forScreenCast: true)
+        capturer = ReplayKitCapturer(delegate: videoSource)
+        super.init()
     }
 
-    func startPeerConnection(qualityProfile: Int = 1) {
+    func startPeerConnection(qualityProfile: Int = 0) {
+        let factory = WebRTCManager.sharedFactory
+
         let config = RTCConfiguration()
-        let stunServer = RTCIceServer(urlStrings: [
+        config.iceServers = [RTCIceServer(urlStrings: [
             "stun:stun.l.google.com:19302",
             "stun:stun1.l.google.com:19302"
-        ])
-        config.iceServers = [stunServer]
+        ])]
         config.sdpSemantics = .unifiedPlan
         config.continualGatheringPolicy = .gatherContinually
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        
-        self.peerConnection = connectionFactory.peerConnection(
-            with: config,
-            constraints: constraints,
-            delegate: self
-        )
+        peerConnection = factory.peerConnection(with: config, constraints: constraints, delegate: self)
 
-        // Agregar pista de video
-        let videoTrack = connectionFactory.videoTrack(with: self.videoSource, trackId: "screen0")
-        _ = self.peerConnection?.add(videoTrack, streamIds: ["screen_stream"])
+        // Solo video, sin audio
+        let videoTrack = factory.videoTrack(with: videoSource, trackId: "screen0")
+        peerConnection?.add(videoTrack, streamIds: ["screen"])
 
-        // Aplicar configuraciones de codificación y prioridad de fluidez (maintainFramerate)
-        applyQualityAndDegradation(qualityProfile: qualityProfile)
+        applyEncodingParameters(qualityProfile: qualityProfile)
     }
 
-    private func applyQualityAndDegradation(qualityProfile: Int) {
-        guard let sender = self.peerConnection?.senders.first(where: { $0.track?.kind == "video" }) else {
-            return
+    private func applyEncodingParameters(qualityProfile: Int) {
+        guard let sender = peerConnection?.senders.first(where: { $0.track?.kind == "video" }) else { return }
+        let params = sender.parameters
+        params.degradationPreference = NSNumber(value: RTCDegradationPreference.maintainFramerate.rawValue)
+
+        for enc in params.encodings {
+            // Perfil bajo por defecto — menor consumo de memoria en la extensión
+            enc.maxBitrateBps = NSNumber(value: 1_500_000) // 1.5 Mbps
+            enc.maxFramerate = NSNumber(value: 30)
+            enc.scaleResolutionDownBy = NSNumber(value: 2.0) // Reducir resolución a la mitad
         }
-
-        let parameters = sender.parameters
-        // CLAVE DE FLUIDEZ: Priorizar framerate sobre resolución ante caídas de red
-        parameters.degradationPreference = NSNumber(value: RTCDegradationPreference.maintainFramerate.rawValue)
-
-        for encoding in parameters.encodings {
-            switch qualityProfile {
-            case 0: // Perfil Bajo (Ahorro de batería / red inestable)
-                encoding.maxBitrateBps = NSNumber(value: 1_500_000) // 1.5 Mbps
-                encoding.maxFramerate = NSNumber(value: 30)
-                encoding.scaleResolutionDownBy = NSNumber(value: 2.0)
-            case 2: // Perfil Alto (Máxima fidelidad a 60 FPS)
-                encoding.maxBitrateBps = NSNumber(value: 6_000_000) // 6.0 Mbps
-                encoding.maxFramerate = NSNumber(value: 60)
-                encoding.scaleResolutionDownBy = NSNumber(value: 1.0)
-            default: // Perfil Medio (Equilibrio perfecto calidad/latencia)
-                encoding.maxBitrateBps = NSNumber(value: 3_000_000) // 3.0 Mbps
-                encoding.maxFramerate = NSNumber(value: 60)
-                encoding.scaleResolutionDownBy = NSNumber(value: 1.0)
-            }
-        }
-
-        sender.parameters = parameters
-        print("[WebRTC] Perfil de calidad aplicado: \(qualityProfile)")
+        sender.parameters = params
     }
 
     func createAndSendOffer() {
-        guard let pc = self.peerConnection else { return }
+        guard let pc = peerConnection else { return }
 
-        // Restricción unidireccional: Solo emitimos video de pantalla, no recibimos nada
         let constraints = RTCMediaConstraints(
             mandatoryConstraints: [
                 "OfferToReceiveAudio": "false",
@@ -103,17 +80,16 @@ class WebRTCManager: NSObject {
             optionalConstraints: nil
         )
 
-        pc.offer(for: constraints) { [weak self] (sdp, error) in
+        pc.offer(for: constraints) { [weak self] sdp, error in
             guard let self = self, let sdp = sdp, error == nil else {
-                print("[WebRTC] Error al generar SDP Offer: \(String(describing: error))")
+                NSLog("[WebRTC] Error generando SDP Offer: \(String(describing: error))")
                 return
             }
-
             pc.setLocalDescription(sdp) { error in
                 if let error = error {
-                    print("[WebRTC] Error seteando local description: \(error.localizedDescription)")
+                    NSLog("[WebRTC] Error seteando local description: \(error)")
                 } else {
-                    print("[WebRTC] SDP Offer local configurada exitosamente.")
+                    NSLog("[WebRTC] SDP Offer generada y enviada.")
                     self.delegate?.webRTCManager(self, didGenerateSDPOffer: sdp.sdp)
                 }
             }
@@ -121,50 +97,41 @@ class WebRTCManager: NSObject {
     }
 
     func setRemoteAnswer(sdpString: String) {
-        guard let pc = self.peerConnection else { return }
-        let remoteDescription = RTCSessionDescription(type: .answer, sdp: sdpString)
-        
-        pc.setRemoteDescription(remoteDescription) { error in
+        guard let pc = peerConnection else { return }
+        let desc = RTCSessionDescription(type: .answer, sdp: sdpString)
+        pc.setRemoteDescription(desc) { error in
             if let error = error {
-                print("[WebRTC] Error seteando remote answer: \(error.localizedDescription)")
+                NSLog("[WebRTC] Error remote answer: \(error)")
             } else {
-                print("[WebRTC] Remote Answer inyectada con éxito. Conexión P2P en curso...")
+                NSLog("[WebRTC] Remote Answer OK — conexión P2P en curso.")
             }
         }
     }
 
     func addRemoteCandidate(sdp: String, sdpMLineIndex: Int32, sdpMid: String?) {
-        guard let pc = self.peerConnection else { return }
-        let candidate = RTCIceCandidate(
-            sdp: sdp,
-            sdpMLineIndex: sdpMLineIndex,
-            sdpMid: sdpMid
-        )
-        
+        guard let pc = peerConnection else { return }
+        let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
         pc.add(candidate) { error in
-            if let error = error {
-                print("[WebRTC] Error agregando candidato ICE remoto: \(error.localizedDescription)")
-            }
+            if let error = error { NSLog("[WebRTC] Error ICE candidate: \(error)") }
         }
     }
 
     func close() {
-        self.peerConnection?.close()
-        self.peerConnection = nil
+        peerConnection?.close()
+        peerConnection = nil
     }
 }
 
 // MARK: - RTCPeerConnectionDelegate
+
 extension WebRTCManager: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        self.delegate?.webRTCManager(self, didGenerateICECandidate: candidate)
+        delegate?.webRTCManager(self, didGenerateICECandidate: candidate)
     }
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        print("[WebRTC] Nuevo estado ICE: \(newState.rawValue)")
-        self.delegate?.webRTCManager(self, didChangeIceConnectionState: newState)
+        NSLog("[WebRTC] ICE connection state: \(newState.rawValue)")
+        delegate?.webRTCManager(self, didChangeIceConnectionState: newState)
     }
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}

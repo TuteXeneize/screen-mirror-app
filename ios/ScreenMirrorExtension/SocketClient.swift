@@ -25,7 +25,7 @@ class SignalingSocketClient {
 
     func connect() {
         guard let url = URL(string: serverUrl) else {
-            delegate?.signalingSocket(self, didFailWithError: "URL de servidor inválida: \(serverUrl)")
+            delegate?.signalingSocket(self, didFailWithError: "URL inválida: \(serverUrl)")
             return
         }
 
@@ -33,92 +33,93 @@ class SignalingSocketClient {
             .log(false),
             .compress,
             .reconnects(true),
-            .reconnectAttempts(-1),
-            .reconnectWait(1)
+            .reconnectAttempts(10),
+            .reconnectWait(2)
         ])
-        
         socket = manager?.defaultSocket
-
-        setupEventHandlers()
+        setupHandlers()
         socket?.connect()
     }
 
-    private func setupEventHandlers() {
+    private func setupHandlers() {
         guard let socket = socket else { return }
 
-        socket.on(clientEvent: .connect) { [weak self] data, ack in
+        socket.on(clientEvent: .connect) { [weak self] _, _ in
             guard let self = self else { return }
             if !self.roomCode.isEmpty {
-                print("[Signaling] Conectado. Uniéndose a sala: \(self.roomCode)")
+                NSLog("[Socket] Conectado. Uniéndose a sala: \(self.roomCode)")
                 socket.emit("unirse-sala", self.roomCode)
             } else {
-                print("[Signaling] Conectado. Uniéndose automáticamente a la sala activa de la PC...")
+                NSLog("[Socket] Conectado. Solicitando sala automática...")
                 socket.emit("unirse-sala-automatica")
             }
         }
 
-        socket.on("sala-unida") { [weak self] data, ack in
+        socket.on("sala-unida") { [weak self] data, _ in
             guard let self = self else { return }
-            if let confirmedCode = data.first as? String {
-                self.roomCode = confirmedCode
-                print("[Signaling] Sala confirmada: \(confirmedCode)")
+            if let code = data.first as? String {
+                self.roomCode = code
+                NSLog("[Socket] Sala confirmada: \(code)")
             }
-            // Iniciar WebRTC ÚNICAMENTE cuando la sala ya está confirmada y unida
+            // Iniciar WebRTC SOLO cuando la sala está confirmada
             self.delegate?.signalingSocketDidConnect(self)
         }
 
-        socket.on("error-sala") { [weak self] data, ack in
+        socket.on("error-sala") { [weak self] data, _ in
             guard let self = self else { return }
-            let errorMsg = data.first as? String ?? "Error desconocido en sala."
-            print("[Signaling] Error de sala: \(errorMsg)")
-            self.delegate?.signalingSocket(self, didFailWithError: errorMsg)
+            let msg = data.first as? String ?? "Error de sala"
+            NSLog("[Socket] Error sala: \(msg)")
+            self.delegate?.signalingSocket(self, didFailWithError: msg)
         }
 
-        // Relay WebRTC (SDP Answer, ICE Candidates, Reconnect)
-        socket.on("mensaje-webrtc") { [weak self] dataArray, ack in
+        socket.on("mensaje-webrtc") { [weak self] dataArray, _ in
             guard let self = self,
                   let data = dataArray.first as? [String: Any],
                   let tipo = data["tipo"] as? String else { return }
 
-            if tipo == "answer", let payload = data["payload"] as? [String: Any], let sdp = payload["sdp"] as? String {
+            if tipo == "answer",
+               let payload = data["payload"] as? [String: Any],
+               let sdp = payload["sdp"] as? String {
                 self.delegate?.signalingSocket(self, didReceiveAnswer: sdp)
-            } else if tipo == "ice-candidate", let payload = data["payload"] as? [String: Any] {
+            } else if tipo == "ice-candidate",
+                      let payload = data["payload"] as? [String: Any] {
                 let candidateSdp = payload["candidate"] as? String ?? ""
                 let sdpMid = payload["sdpMid"] as? String
-                let sdpMLineIndex = (payload["sdpMLineIndex"] as? NSNumber)?.int32Value ?? (payload["sdpMLineIndex"] as? Int32) ?? 0
+                let sdpMLineIndex = (payload["sdpMLineIndex"] as? NSNumber)?.int32Value ?? 0
                 if !candidateSdp.isEmpty {
-                    self.delegate?.signalingSocket(self, didReceiveCandidate: candidateSdp, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
+                    self.delegate?.signalingSocket(
+                        self,
+                        didReceiveCandidate: candidateSdp,
+                        sdpMLineIndex: sdpMLineIndex,
+                        sdpMid: sdpMid
+                    )
                 }
             } else if tipo == "reconnect-request" {
-                print("[Signaling] El receptor solicitó reconexión.")
                 self.delegate?.signalingSocketDidRequestReconnect(self)
             }
         }
 
-        socket.on(clientEvent: .disconnect) { [weak self] data, ack in
+        socket.on(clientEvent: .disconnect) { [weak self] _, _ in
             guard let self = self else { return }
-            print("[Signaling] Desconectado del servidor.")
+            NSLog("[Socket] Desconectado.")
             self.delegate?.signalingSocketDidDisconnect(self)
         }
 
-        socket.on(clientEvent: .error) { [weak self] data, ack in
+        socket.on(clientEvent: .error) { [weak self] _, _ in
             guard let self = self else { return }
-            print("[Signaling] Error de conexión socket.")
-            self.delegate?.signalingSocket(self, didFailWithError: "Error de conexión socket.")
+            NSLog("[Socket] Error de conexión.")
+            self.delegate?.signalingSocket(self, didFailWithError: "Error de conexión socket")
         }
     }
 
     func sendSDPOffer(sdp: String) {
-        let payload: [String: Any] = [
-            "type": "offer",
-            "sdp": sdp
-        ]
+        let payload: [String: Any] = ["type": "offer", "sdp": sdp]
         socket?.emit("mensaje-webrtc", [
             "codigo": roomCode,
             "tipo": "offer",
             "payload": payload
         ])
-        print("[Signaling] SDP Offer emitida al receptor.")
+        NSLog("[Socket] SDP Offer emitida.")
     }
 
     func sendICECandidate(sdp: String, sdpMLineIndex: Int32, sdpMid: String?) {

@@ -19,7 +19,6 @@ targets:
       - ScreenMirrorApp
     dependencies:
       - target: ScreenMirrorExtension
-      - package: WebRTC
     info:
       path: ScreenMirrorApp/Info.plist
       properties:
@@ -30,8 +29,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: "Necesitamos acceso a tu red Wi-Fi local para conectar y transmitir la pantalla a tu PC o Smart TV en tiempo real."
-        NSCameraUsageDescription: "Necesitamos acceso a la cámara para escanear el código QR de emparejamiento."
+        NSLocalNetworkUsageDescription: "Acceso a la red Wi-Fi local para transmitir la pantalla a tu PC."
     entitlements:
       path: ScreenMirrorApp/ScreenMirrorApp.entitlements
     settings:
@@ -69,7 +67,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: "Necesitamos acceso a tu red Wi-Fi local para conectar y transmitir la pantalla a tu PC o Smart TV en tiempo real."
+        NSLocalNetworkUsageDescription: "Acceso a la red Wi-Fi local para transmitir la pantalla a tu PC."
         NSExtension:
           NSExtensionPointIdentifier: "com.apple.broadcast-services-upload"
           NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SampleHandler"

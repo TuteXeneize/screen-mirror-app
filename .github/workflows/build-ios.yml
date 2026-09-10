@@ -20,16 +20,21 @@ jobs:
       - name: Instalar XcodeGen
         run: brew install xcodegen
 
-      - name: Generar Proyecto con XcodeGen y Resolver SPM
+      - name: Generar Proyecto Xcode con XcodeGen
         run: |
           cd ios
           xcodegen generate
           echo "=== Esquemas detectados ==="
           xcodebuild -project ScreenMirrorApp.xcodeproj -list
-          echo "=== Resolviendo dependencias de paquetes Swift ==="
-          xcodebuild -resolvePackageDependencies -project ScreenMirrorApp.xcodeproj
 
-      - name: Compilar Binario con xcodebuild
+      - name: Resolver dependencias SPM
+        run: |
+          cd ios
+          xcodebuild -resolvePackageDependencies \
+            -project ScreenMirrorApp.xcodeproj \
+            -scheme ScreenMirrorApp
+
+      - name: Compilar con xcodebuild
         run: |
           cd ios
           set -o pipefail
@@ -44,15 +49,14 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             BUILD_DIR="$(pwd)/build" 2>&1 | tee build.log
 
-      - name: Extraer y Reportar Errores
+      - name: Mostrar errores si fallo la compilación
         if: failure()
         run: |
           cd ios
           echo "### ❌ Log de compilacion:" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
-          tail -n 80 build.log >> $GITHUB_STEP_SUMMARY
+          tail -n 100 build.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B debug-log
@@ -62,72 +66,131 @@ jobs:
           git commit -m "Auto: Log de error exacto" || true
           git push origin debug-log --force || true
 
-      - name: Empaquetar archivo .IPA
+      - name: Empaquetar IPA (con frameworks embebidos correctamente)
         if: success()
         run: |
           cd ios
+
+          # --- Localizar la app compilada ---
           APP_PATH=$(find build -name "ScreenMirrorApp.app" -type d | head -n 1)
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "ScreenMirrorApp.app" -type d | head -n 1)
           fi
-          
-          echo "App encontrada en: $APP_PATH"
+          echo "ScreenMirrorApp.app encontrada en: $APP_PATH"
           if [ -z "$APP_PATH" ]; then
-            echo "Error: No se encontro archivo ScreenMirrorApp.app"
+            echo "ERROR: No se encontró ScreenMirrorApp.app"
             exit 1
           fi
+
+          # --- Localizar la extensión ---
+          EXT_PATH="$APP_PATH/PlugIns/ScreenMirrorExtension.appex"
+          if [ ! -d "$EXT_PATH" ]; then
+            echo "ERROR: No se encontró ScreenMirrorExtension.appex"
+            exit 1
+          fi
+
+          echo "Extension encontrada en: $EXT_PATH"
+          echo ""
+          echo "=== Listado inicial del app ==="
+          find "$APP_PATH" -name "*.framework" -type d
+
+          # --- Encontrar WebRTC.framework compilado ---
+          WEBRTC_BUILT=$(find build ~/Library/Developer/Xcode/DerivedData -name "WebRTC.framework" -type d 2>/dev/null | grep -v "simulator" | grep -v ".xcframework" | head -n 1)
           
-          echo "=== Asegurando que WebRTC.framework este en Frameworks de la App ==="
+          # Si no está compilado, descargarlo manualmente desde el XCFramework
+          if [ -z "$WEBRTC_BUILT" ]; then
+            echo "WebRTC.framework no encontrado en build — descargando XCFramework..."
+            curl -sL "https://github.com/stasel/WebRTC/releases/download/152.0.0/WebRTC-M152.xcframework.zip" -o webrtc.zip
+            unzip -q webrtc.zip
+            WEBRTC_BUILT="WebRTC.xcframework/ios-arm64/WebRTC.framework"
+          fi
+
+          echo "Usando WebRTC.framework desde: $WEBRTC_BUILT"
+
+          # --- Embeber WebRTC.framework en la Extensión (CRÍTICO) ---
+          # La extensión debe tener su propia copia del framework dinámico.
+          # Sin esto, dyld no puede cargarlo y la extensión crashea al instante.
+          mkdir -p "$EXT_PATH/Frameworks"
+          if [ ! -d "$EXT_PATH/Frameworks/WebRTC.framework" ]; then
+            echo "Copiando WebRTC.framework a la extensión..."
+            cp -R "$WEBRTC_BUILT" "$EXT_PATH/Frameworks/"
+          fi
+
+          # --- También embeber en la App principal (buena práctica) ---
           mkdir -p "$APP_PATH/Frameworks"
           if [ ! -d "$APP_PATH/Frameworks/WebRTC.framework" ]; then
-            echo "WebRTC.framework no esta en $APP_PATH/Frameworks. Buscando..."
-            WEBRTC_SOURCE=$(find build ~/Library/Developer/Xcode/DerivedData -name "WebRTC.framework" -type d 2>/dev/null | grep -v "simulator" | head -n 1)
-            if [ -n "$WEBRTC_SOURCE" ]; then
-              echo "Copiando WebRTC.framework desde: $WEBRTC_SOURCE"
-              cp -R "$WEBRTC_SOURCE" "$APP_PATH/Frameworks/"
-            else
-              echo "Descargando XCFramework de WebRTC..."
-              curl -sL "https://github.com/stasel/WebRTC/releases/download/152.0.0/WebRTC-M152.xcframework.zip" -o webrtc.zip
-              unzip -q webrtc.zip
-              cp -R WebRTC.xcframework/ios-arm64/WebRTC.framework "$APP_PATH/Frameworks/"
-              rm -rf webrtc.zip WebRTC.xcframework
-            fi
+            echo "Copiando WebRTC.framework a la app principal..."
+            cp -R "$WEBRTC_BUILT" "$APP_PATH/Frameworks/"
           fi
-          
-          echo "=== Contenido de Frameworks ==="
-          ls -la "$APP_PATH/Frameworks"
-          
-          echo "=== Verificando Info.plist de la extension ==="
-          plutil -p "$APP_PATH/PlugIns/ScreenMirrorExtension.appex/Info.plist"
-          
+
+          # --- Buscar y embeber SocketIO y Starscream en la extensión ---
+          for FW_NAME in SocketIO Starscream; do
+            FW_BUILT=$(find build ~/Library/Developer/Xcode/DerivedData -name "${FW_NAME}.framework" -type d 2>/dev/null | grep -v "simulator" | head -n 1)
+            if [ -n "$FW_BUILT" ] && [ ! -d "$EXT_PATH/Frameworks/${FW_NAME}.framework" ]; then
+              echo "Copiando ${FW_NAME}.framework a la extensión..."
+              cp -R "$FW_BUILT" "$EXT_PATH/Frameworks/"
+            fi
+          done
+
+          # --- Limpiar archivos temporales si los descargamos ---
+          rm -rf webrtc.zip WebRTC.xcframework 2>/dev/null || true
+
+          echo ""
+          echo "=== Contenido final de App Frameworks ==="
+          ls -la "$APP_PATH/Frameworks/" 2>/dev/null || echo "(vacío)"
+
+          echo ""
+          echo "=== Contenido final de Extension Frameworks ==="
+          ls -la "$EXT_PATH/Frameworks/" 2>/dev/null || echo "(vacío)"
+
+          echo ""
+          echo "=== Info.plist de la extensión ==="
+          plutil -p "$EXT_PATH/Info.plist"
+
+          # --- Crear IPA ---
           rm -rf Payload ScreenMirrorApp.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -r -q ScreenMirrorApp.ipa Payload
-          echo "IPA generado exitosamente!"
+          echo ""
+          echo "IPA generado:"
           ls -lh ScreenMirrorApp.ipa
 
-      - name: Subir instalador IPA como Artefacto
+          # Verificar que el framework está dentro del IPA
+          echo ""
+          echo "=== Frameworks dentro del IPA ==="
+          unzip -l ScreenMirrorApp.ipa | grep -i "framework" || echo "(ninguno encontrado)"
+
+      - name: Subir IPA como Artefacto de GitHub Actions
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ScreenMirrorApp-Instalador-iOS
+          name: ScreenMirrorApp-v1.0.5-iOS
           path: ios/ScreenMirrorApp.ipa
           retention-days: 30
 
-      - name: Publicar Release directa en GitHub (.IPA)
+      - name: Publicar Release con el IPA
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.4
-          name: "ScreenMirrorApp v1.0.4 (.IPA)"
+          tag_name: v1.0.5
+          name: "ScreenMirrorApp v1.0.5 — Fix definitivo"
           body: |
-            ### 📺 ScreenMirrorApp v1.0.4 - Instalador iOS
-            - 🎯 Incrustación obligatoria de WebRTC.framework en el paquete IPA (soluciona cierre inmediato / nunca graba al tocar Start Broadcast).
-            - ⚡ Selector nativo dinámico de ReplayKit para preseleccionar directamente ScreenMirror.
-            - 🚀 Sincronización WebRTC inmediata y auto-descubrimiento HTTP de sala activa para cuentas gratuitas de Apple ID.
-            
-            Descarga el archivo `ScreenMirrorApp.ipa` para instalarlo en tu iPhone con Sideloadly o AltStore.
+            ### 📺 ScreenMirrorApp v1.0.5 — Fix de inicio de transmisión
+
+            **Cambios en esta versión:**
+            - 🔧 **Fix crítico**: WebRTC.framework ahora se embebe dentro del `.appex` (extensión) además de la app principal. Sin esto, iOS no podía cargar la extensión.
+            - 🚀 **Inicialización lazy**: WebRTC se inicializa en el frame 5 (no en `broadcastStarted`) para evitar el límite de 50MB de RAM de las extensiones.
+            - ✅ **SocketIO y Starscream** embebidos correctamente en la extensión.
+            - 🔗 **URL del servidor hardcodeada** como fallback para bypass de la restricción de App Groups en cuentas gratuitas.
+            - 📉 **Resolución reducida** (×0.5) para menor consumo de memoria en la extensión.
+
+            **Instalación:**
+            1. Descarga `ScreenMirrorApp.ipa`
+            2. Instala con **Sideloadly** usando tu Apple ID gratuito
+            3. Abre el navegador en la PC: http://192.168.1.38:3000
+            4. En el iPhone: ingresa el código de 6 dígitos → Guardar → Botón rojo → Start Broadcast
+
           files: ios/ScreenMirrorApp.ipa
           draft: false
           prerelease: false

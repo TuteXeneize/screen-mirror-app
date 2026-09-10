@@ -2,128 +2,152 @@ import Foundation
 import ReplayKit
 import WebRTC
 
-/// Controlador principal de la extensión de captura de pantalla de iOS.
-/// Se ejecuta en un proceso independiente del sistema operativo con un límite de memoria estricto de 50 MB.
+/// Controlador principal de la extensión de captura de pantalla.
+/// Corre en un proceso separado con límite de 50 MB de RAM.
+/// DISEÑO: WebRTC se inicializa en el primer frame (lazy), no en broadcastStarted,
+/// para evitar que el RTCPeerConnectionFactory explote la memoria antes de que iOS
+/// haya tenido tiempo de asignarle los recursos necesarios.
 class SampleHandler: RPBroadcastSampleHandler {
 
-    private let appGroupSuite = "group.com.matias.screenmirror"
-    
-    private var webRTCManager: WebRTCManager?
-    private var socketClient: SignalingSocketClient?
-    
+    // MARK: - Configuración
+    // URL del servidor hardcodeada como fallback garantizado.
+    // Sideloadly con cuenta gratuita elimina App Groups, así que
+    // UserDefaults(suiteName:) falla silenciosamente → fallback.
+    private let hardcodedServerUrl = "http://192.168.1.38:3000"
+    private let hardcodedQuality = 0 // Perfil bajo (menor memoria)
+
     private var serverUrl: String = ""
     private var roomCode: String = ""
-    private var qualityProfile: Int = 1
+    private var qualityProfile: Int = 0
 
-    // 1. Invocado cuando el usuario inicia la duplicación de pantalla
+    // MARK: - Estado lazy
+    private var webRTCManager: WebRTCManager?
+    private var socketClient: SignalingSocketClient?
+    private var isWebRTCStarted = false
+    private var frameCount = 0
+
+    // MARK: - Lifecycle
+
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        print("▶️ [Extension] Transmisión iniciada por el usuario.")
+        NSLog("▶️ [Extension] broadcastStarted invocado.")
 
-        let defaults = UserDefaults(suiteName: appGroupSuite)
-        let codigoGuardado = defaults?.string(forKey: "codigoSalaCompartido") ?? ""
-        let serverGuardado = defaults?.string(forKey: "serverUrl") ?? "http://192.168.1.38:3000"
-        let calidadGuardada = defaults?.integer(forKey: "qualityProfile") ?? 1
+        // Leer configuración — puede ser vacío si App Groups fue desactivado por Sideloadly
+        let defaults = UserDefaults.standard
+        let urlFromApp = defaults.string(forKey: "serverUrl") ?? ""
+        let codeFromApp = defaults.string(forKey: "codigoSalaCompartido") ?? ""
 
-        self.serverUrl = serverGuardado.isEmpty ? "http://192.168.1.38:3000" : serverGuardado
-        self.qualityProfile = calidadGuardada
-        self.roomCode = codigoGuardado
+        // Usar hardcoded URL como fallback si App Groups no funciona
+        serverUrl = urlFromApp.isEmpty ? hardcodedServerUrl : urlFromApp
+        roomCode = codeFromApp
+        qualityProfile = defaults.integer(forKey: "qualityProfile")
 
-        self.webRTCManager = WebRTCManager()
-        self.webRTCManager?.delegate = self
+        NSLog("[Extension] Servidor: \(serverUrl) | Sala: '\(roomCode)'")
 
-        if !self.roomCode.isEmpty {
-            self.conectarSocket(codigo: self.roomCode)
-        } else {
-            // Consultar a la PC la sala activa para auto-emparejar
-            self.consultarSalaActivaYConectar()
+        // NO inicializar WebRTC aquí — demasiado pesado para los primeros milisegundos.
+        // Se inicializa en el primer processSampleBuffer.
+    }
+
+    override func broadcastPaused() {
+        NSLog("⏸️ [Extension] Pausado.")
+    }
+
+    override func broadcastResumed() {
+        NSLog("▶️ [Extension] Reanudado.")
+    }
+
+    override func broadcastFinished() {
+        NSLog("⏹️ [Extension] Finalizado.")
+        cleanup()
+    }
+
+    // MARK: - Procesamiento de frames
+
+    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
+        guard sampleBufferType == .video else { return }
+
+        frameCount += 1
+
+        // Inicializar WebRTC en el frame 5 (dar tiempo al sistema, no al 1 para evitar OOM burst)
+        if frameCount == 5 && !isWebRTCStarted {
+            isWebRTCStarted = true
+            iniciarWebRTC()
+        }
+
+        // Enviar frame si WebRTC ya está listo
+        if isWebRTCStarted, let manager = webRTCManager {
+            manager.capturer.capturarFrameDeReplayKit(sampleBuffer)
         }
     }
 
-    private func consultarSalaActivaYConectar() {
-        guard let url = URL(string: "\(self.serverUrl)/api/active-room") else {
-            self.conectarSocket(codigo: "")
-            return
+    // MARK: - Inicialización lazy de WebRTC y señalización
+
+    private func iniciarWebRTC() {
+        NSLog("[Extension] Inicializando WebRTC (lazy, frame 5)...")
+
+        // Crear WebRTCManager
+        let manager = WebRTCManager()
+        manager.delegate = self
+        self.webRTCManager = manager
+
+        // Conectar socket — luego en signalingSocketDidConnect se creará el PeerConnection
+        if !roomCode.isEmpty {
+            conectarSocket(codigo: roomCode)
+        } else {
+            // Sin sala guardada: consultar servidor para auto-emparejar
+            consultarSalaActivaYConectar()
         }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 2.5
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self = self else { return }
-            var codigoDetectado = ""
-            if let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let code = json["roomCode"] as? String {
-                codigoDetectado = code
-                print("[Extension] Sala activa detectada desde la PC: \(code)")
-            }
-            DispatchQueue.main.async {
-                self.conectarSocket(codigo: codigoDetectado)
-            }
-        }.resume()
     }
 
     private func conectarSocket(codigo: String) {
         self.roomCode = codigo
-        print("[Extension] Conectando a \(self.serverUrl) con sala: \(self.roomCode)")
-        self.socketClient = SignalingSocketClient(serverUrl: self.serverUrl, roomCode: self.roomCode)
-        self.socketClient?.delegate = self
-        self.socketClient?.connect()
+        NSLog("[Extension] Conectando socket a \(serverUrl) con sala: '\(roomCode)'")
+        let client = SignalingSocketClient(serverUrl: serverUrl, roomCode: roomCode)
+        client.delegate = self
+        self.socketClient = client
+        client.connect()
     }
 
-    // 2. Invocado si el usuario pausa la transmisión
-    override func broadcastPaused() {
-        print("⏸️ [Extension] Transmisión pausada.")
-    }
-
-    // 3. Invocado al reanudar
-    override func broadcastResumed() {
-        print("▶️ [Extension] Transmisión reanudada.")
-    }
-
-    // 4. Invocado cuando se detiene la transmisión
-    override func broadcastFinished() {
-        print("⏹️ [Extension] Transmisión finalizada. Liberando recursos...")
-        cleanup()
-    }
-
-    // 5. Inyección de cuadros de video generados por el sistema operativo
-    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
-        switch sampleBufferType {
-        case .video:
-            // Inyectar el buffer de pantalla directamente al adaptador zero-copy
-            webRTCManager?.capturer.capturarFrameDeReplayKit(sampleBuffer)
-            
-        case .audioApp:
-            // Audio de aplicaciones (ignorado en Fase 0 para preservar el límite de 50 MB)
-            break
-            
-        case .audioMic:
-            // Audio del micrófono (ignorado en MVP)
-            break
-            
-        @unknown default:
-            break
+    private func consultarSalaActivaYConectar() {
+        guard let url = URL(string: "\(serverUrl)/api/active-room") else {
+            conectarSocket(codigo: "")
+            return
         }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 3.0
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            guard let self = self else { return }
+            var codigo = ""
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let code = json["roomCode"] as? String {
+                codigo = code
+                NSLog("[Extension] Sala activa detectada: \(code)")
+            }
+            self.conectarSocket(codigo: codigo)
+        }.resume()
     }
+
+    // MARK: - Limpieza
 
     private func cleanup() {
-        webRTCManager?.close()
-        webRTCManager = nil
         socketClient?.disconnect()
         socketClient = nil
+        webRTCManager?.close()
+        webRTCManager = nil
+        isWebRTCStarted = false
+        frameCount = 0
     }
 }
 
 // MARK: - WebRTCManagerDelegate
+
 extension SampleHandler: WebRTCManagerDelegate {
     func webRTCManager(_ manager: WebRTCManager, didGenerateSDPOffer sdp: String) {
-        // Enviar la oferta SDP local al receptor mediante el WebSocket
         socketClient?.sendSDPOffer(sdp: sdp)
     }
 
     func webRTCManager(_ manager: WebRTCManager, didGenerateICECandidate candidate: RTCIceCandidate) {
-        // Enviar candidatos ICE locales al receptor
         socketClient?.sendICECandidate(
             sdp: candidate.sdp,
             sdpMLineIndex: candidate.sdpMLineIndex,
@@ -132,21 +156,22 @@ extension SampleHandler: WebRTCManagerDelegate {
     }
 
     func webRTCManager(_ manager: WebRTCManager, didChangeIceConnectionState state: RTCIceConnectionState) {
-        print("[Extension] Estado ICE de WebRTC: \(state.rawValue)")
+        NSLog("[Extension] ICE state: \(state.rawValue)")
     }
 }
 
 // MARK: - SignalingSocketDelegate
+
 extension SampleHandler: SignalingSocketDelegate {
     func signalingSocketDidConnect(_ client: SignalingSocketClient) {
         self.roomCode = client.roomCode
-        print("[Extension] Socket conectado a sala \(self.roomCode). Iniciando WebRTC PeerConnection...")
+        NSLog("[Extension] Sala confirmada: '\(self.roomCode)'. Iniciando PeerConnection...")
         webRTCManager?.startPeerConnection(qualityProfile: qualityProfile)
         webRTCManager?.createAndSendOffer()
     }
 
     func signalingSocket(_ client: SignalingSocketClient, didReceiveAnswer sdp: String) {
-        print("[Extension] SDP Answer recibida del receptor. Inyectando en WebRTC...")
+        NSLog("[Extension] SDP Answer recibida.")
         webRTCManager?.setRemoteAnswer(sdpString: sdp)
     }
 
@@ -155,19 +180,18 @@ extension SampleHandler: SignalingSocketDelegate {
     }
 
     func signalingSocketDidRequestReconnect(_ client: SignalingSocketClient) {
-        print("[Extension] Petición de reconexión recibida. Reiniciando negociación WebRTC...")
+        NSLog("[Extension] Reconexión solicitada.")
         webRTCManager?.close()
         webRTCManager?.startPeerConnection(qualityProfile: qualityProfile)
         webRTCManager?.createAndSendOffer()
     }
 
     func signalingSocket(_ client: SignalingSocketClient, didFailWithError message: String) {
-        print("[Extension] Error en señalización: \(message)")
-        let error = NSError(domain: "ScreenMirrorSignaling", code: 1002, userInfo: [NSLocalizedFailureReasonErrorKey: message])
-        finishBroadcastWithError(error)
+        NSLog("[Extension] Error señalización: \(message)")
+        // No llamar finishBroadcastWithError para no cortar el broadcast por errores de red
     }
 
     func signalingSocketDidDisconnect(_ client: SignalingSocketClient) {
-        print("[Extension] Servidor de señalización desconectado.")
+        NSLog("[Extension] Socket desconectado.")
     }
 }

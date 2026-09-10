@@ -2,44 +2,41 @@ import SwiftUI
 import ReplayKit
 
 struct ContentView: View {
-    // Identificador del App Group compartido con la Broadcast Extension
-    private let appGroupSuite = "group.com.matias.screenmirror"
-    
+    // URL del servidor hardcodeada — la misma que la extensión usa como fallback
+    private let hardcodedServerUrl = "http://192.168.1.38:3000"
+
     @State private var serverUrl: String = "http://192.168.1.38:3000"
     @State private var roomCode: String = ""
-    @State private var statusMessage: String = "Ingresa el código que ves en la pantalla de tu TV o PC"
+    @State private var statusMessage: String = "Ingresa el código de 6 dígitos que ves en la PC"
     @State private var isConfigured: Bool = false
-    @State private var selectedQuality: Int = 1 // 0: Bajo, 1: Medio, 2: Alto
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 24) {
-                    // 1. Cabecera
+
+                    // MARK: - Cabecera
                     VStack(spacing: 8) {
                         Image(systemName: "tv.and.mediabox")
                             .font(.system(size: 60))
                             .foregroundColor(.blue)
-                        
-                        Text("Screen Mirroring")
+                        Text("Screen Mirror")
                             .font(.title)
                             .fontWeight(.bold)
-                        
-                        Text("Transmite a tu PC o Smart TV sin suscripciones")
+                        Text("Transmite tu pantalla a la PC o Smart TV")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .padding(.top, 20)
 
-                    // 2. Tarjeta de Configuración
+                    // MARK: - Configuración
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("1. Datos de Conexión")
+                        Text("1. Configuración")
                             .font(.headline)
-                            .foregroundColor(.primary)
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Dirección del Servidor:")
+                            Text("Dirección IP del servidor (PC):")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             TextField("http://192.168.1.X:3000", text: $serverUrl)
@@ -50,48 +47,36 @@ struct ContentView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Código de Sala (6 dígitos de la tele/PC):")
+                            Text("Código de 6 dígitos (de la pantalla de la PC):")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             TextField("Ej: 482913", text: $roomCode)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .keyboardType(.numberPad)
-                                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                                .font(.system(size: 24, weight: .bold, design: .monospaced))
                         }
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Perfil de Calidad:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Picker("Calidad", selection: $selectedQuality) {
-                                Text("Baja (Fluido)").tag(0)
-                                Text("Media (1080p)").tag(1)
-                                Text("Alta (60 FPS)").tag(2)
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
-                        }
-
-                        Button(action: saveConfiguration) {
+                        Button(action: guardarYVincular) {
                             HStack {
                                 Image(systemName: "checkmark.circle.fill")
-                                Text("Guardar y Vincular")
+                                Text("Guardar y Vincular con la PC")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(roomCode.count >= 4 ? Color.blue : Color.gray)
+                            .background(roomCode.count >= 6 ? Color.blue : Color.gray)
                             .foregroundColor(.white)
                             .cornerRadius(10)
                         }
-                        .disabled(roomCode.count < 4)
+                        .disabled(roomCode.count < 6)
                     }
                     .padding()
                     .background(Color(.secondarySystemBackground))
                     .cornerRadius(16)
                     .padding(.horizontal)
 
-                    // 3. Estado de Configuración
-                    HStack {
-                        Image(systemName: isConfigured ? "checkmark.circle" : "info.circle")
+                    // MARK: - Estado
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle")
                             .foregroundColor(isConfigured ? .green : .orange)
                         Text(statusMessage)
                             .font(.footnote)
@@ -99,25 +84,23 @@ struct ContentView: View {
                     }
                     .padding(.horizontal)
 
-                    // 4. Botón Nativo ReplayKit de Transmisión
+                    // MARK: - Botón de transmisión
                     VStack(spacing: 12) {
-                        Text("2. Iniciar Transmisión de Pantalla")
+                        Text("2. Iniciar Transmisión")
                             .font(.headline)
-                        
-                        Text("Toca el botón rojo para abrir la ventana de transmisión del sistema:")
+
+                        Text("Toca el botón rojo → selecciona ScreenMirror → Start Broadcast")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
 
-                        // Selector nativo de ReplayKit
-                        BroadcastPickerView(extensionBundleId: "\(Bundle.main.bundleIdentifier ?? "com.matias.screenmirror").extension")
-                            .frame(width: 60, height: 60)
-                            .background(Color.red.opacity(0.1))
-                            .clipShape(Circle())
-                            .overlay(
-                                Circle().stroke(Color.red, lineWidth: 2)
-                            )
+                        BroadcastPickerView(extensionBundleId: "com.matias.screenmirror.extension")
+                            .frame(width: 70, height: 70)
+
+                        Text("El botón rojo activa la transmisión nativa de iOS")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -125,14 +108,20 @@ struct ContentView: View {
                     .cornerRadius(16)
                     .padding(.horizontal)
 
-                    // 5. Guía Rápida
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("¿Cómo funciona?", systemImage: "questionmark.circle")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("• Asegúrate de que el iPhone y la tele/PC estén conectados al mismo Wi-Fi.\n• Si estás fuera de la app, también puedes iniciar la transmisión desde el Centro de Control de iOS manteniendo presionado el botón de Grabación.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    // MARK: - Instrucciones
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("¿Cómo usarlo?", systemImage: "questionmark.circle")
+                            .font(.subheadline).fontWeight(.semibold)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("① Abre el navegador en tu PC: http://192.168.1.38:3000")
+                            Text("② Escribe el código de 6 dígitos que aparece en la pantalla")
+                            Text("③ Toca \"Guardar y Vincular\"")
+                            Text("④ Toca el botón rojo → ScreenMirror → Start Broadcast")
+                            Text("⑤ ¡Tu pantalla aparece en la PC en segundos!")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     }
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -140,73 +129,70 @@ struct ContentView: View {
                     .cornerRadius(12)
                     .padding(.horizontal)
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom, 40)
             }
             .navigationBarHidden(true)
-            .onAppear(perform: loadConfiguration)
+            .onAppear(perform: cargarConfiguracion)
         }
     }
 
-    private func saveConfiguration() {
+    // MARK: - Acciones
+
+    private func guardarYVincular() {
         let cleanUrl = serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanCode = roomCode.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if let defaults = UserDefaults(suiteName: appGroupSuite) {
-            defaults.set(cleanUrl, forKey: "serverUrl")
-            defaults.set(cleanCode, forKey: "codigoSalaCompartido")
-            defaults.set(selectedQuality, forKey: "qualityProfile")
-            defaults.synchronize()
-        }
+        // Guardar en UserDefaults estándar — la extensión también los lee
         UserDefaults.standard.set(cleanUrl, forKey: "serverUrl")
         UserDefaults.standard.set(cleanCode, forKey: "codigoSalaCompartido")
+        UserDefaults.standard.synchronize()
 
         isConfigured = true
-        statusMessage = "Comprobando conexión con tu PC..."
+        statusMessage = "Comprobando conexión..."
 
-        // Test de red y vinculación directa con la PC
+        // Notificar al servidor la vinculación
         guard let url = URL(string: "\(cleanUrl)/api/pair") else {
-            statusMessage = "⚠️ URL inválida: \(cleanUrl)"
+            statusMessage = "⚠️ URL inválida"
             return
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let jsonBody = ["roomCode": cleanCode]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: jsonBody)
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["roomCode": cleanCode])
         request.timeoutInterval = 4.0
 
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    self.statusMessage = "✅ ¡Conexión con tu PC exitosa! Pulsa Iniciar Transmisión abajo."
+                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                    self.statusMessage = "✅ ¡Vinculado! Ahora toca el botón rojo para transmitir."
                 } else {
-                    self.statusMessage = "⚠️ Guardado, pero tu iPhone no llega a la PC. ¿Están en el mismo Wi-Fi?"
+                    self.statusMessage = "⚠️ Guardado localmente. Verifica que el servidor esté activo y que el iPhone y la PC estén en el mismo Wi-Fi."
                 }
             }
         }.resume()
     }
 
-    private func loadConfiguration() {
-        let defaults = UserDefaults(suiteName: appGroupSuite) ?? UserDefaults.standard
-        if let savedServer = defaults.string(forKey: "serverUrl"), !savedServer.isEmpty {
-            serverUrl = savedServer
+    private func cargarConfiguracion() {
+        let defaults = UserDefaults.standard
+        if let url = defaults.string(forKey: "serverUrl"), !url.isEmpty {
+            serverUrl = url
         }
-        if let savedCode = defaults.string(forKey: "codigoSalaCompartido"), !savedCode.isEmpty {
-            roomCode = savedCode
+        if let code = defaults.string(forKey: "codigoSalaCompartido"), !code.isEmpty {
+            roomCode = code
             isConfigured = true
-            statusMessage = "✅ Sala \(savedCode) lista."
+            statusMessage = "✅ Sala \(code) configurada. Listo para transmitir."
         }
-        selectedQuality = defaults.integer(forKey: "qualityProfile")
     }
 }
 
-// Representación de UIView para el botón del sistema ReplayKit
+// MARK: - BroadcastPickerView nativo de ReplayKit
+
 struct BroadcastPickerView: UIViewRepresentable {
     let extensionBundleId: String
 
     func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
-        let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 60, height: 60))
+        let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 70, height: 70))
         picker.preferredExtension = extensionBundleId
         return picker
     }
